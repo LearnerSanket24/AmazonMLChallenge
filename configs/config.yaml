@@ -1,0 +1,194 @@
+# Amazon ML Challenge 2026 - Business Entity Resolution Configuration
+
+# Data paths
+data:
+  train_dir: "data/train"
+  test_dir: "data/test"
+  source1_train: "source1_train.tsv"
+  source2_train: "source2_train.tsv"
+  source3_train: "source3_train.tsv"
+  ground_truth_train: "ground_truth_train.tsv"
+  source1_test: "source1_test.tsv"
+  source2_test: "source2_test.tsv"
+  source3_test: "source3_test.tsv"
+
+# Blocking configuration
+blocking:
+  # Token-based blocking keys
+  name_token_min_length: 3
+  name_token_max_tokens: 5
+  address_token_min_length: 3
+  
+  # N-gram blocking
+  name_ngram_size: 3
+  address_ngram_size: 3
+  ngram_min_frequency: 2
+  
+  # Phonetic blocking
+  use_soundex: true
+  use_metaphone: true
+  use_nysiis: true
+  
+  # Postal code / geographic blocking
+  use_postal_code_prefix: true
+  postal_code_prefix_length: 3
+  
+  # Embedding-based blocking (ANN)
+  use_embedding_blocking: true
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  embedding_dim: 384
+  ann_index_type: "hnsw"  # or "ivf"
+  ann_num_neighbors: 50
+  
+  # Multi-key blocking combination
+  blocking_keys:
+    - "name_first_token"
+    - "name_bigram"
+    - "address_first_token"
+    - "postal_code_prefix"
+    - "soundex_name"
+    - "metaphone_name"
+    - "embedding_knn"
+  
+  # Candidate pair limits
+  max_candidates_per_source1: 200
+  min_candidates_per_source1: 1
+
+# Feature engineering configuration
+features:
+  # String similarity metrics
+  string_metrics:
+    - "jaro_winkler"
+    - "levenshtein"
+    - "damerau_levenshtein"
+    - "jaccard"
+    - "cosine_tfidf"
+    - "token_set_ratio"
+    - "token_sort_ratio"
+    - "partial_ratio"
+  
+  # Name-specific features
+  name_features:
+    - "exact_match"
+    - "prefix_match"
+    - "suffix_match"
+    - "abbreviation_match"
+    - "token_overlap"
+    - "tfidf_cosine"
+    - "embedding_cosine"
+    - "phonetic_match"
+  
+  # Address-specific features
+  address_features:
+    - "exact_match"
+    - "house_number_match"
+    - "street_name_similarity"
+    - "city_match"
+    - "state_match"
+    - "postal_code_match"
+    - "landmark_overlap"
+    - "token_overlap"
+    - "tfidf_cosine"
+    - "embedding_cosine"
+  
+  # Cross features
+  cross_features:
+    - "name_address_consistency"
+    - "shared_tokens_name_address"
+  
+  # Embedding models
+  embedding_models:
+    - "sentence-transformers/all-MiniLM-L6-v2"
+    - "sentence-transformers/all-mpnet-base-v2"
+    - "BAAI/bge-small-en-v1.5"
+
+# Matching model configuration
+matching:
+  # Model ensemble
+  models:
+    - name: "xgboost"
+      params:
+        n_estimators: 500
+        max_depth: 8
+        learning_rate: 0.05
+        subsample: 0.8
+        colsample_bytree: 0.8
+        min_child_weight: 3
+        reg_alpha: 0.1
+        reg_lambda: 1.0
+        random_state: 42
+        n_jobs: -1
+        eval_metric: "logloss"
+    
+    - name: "lightgbm"
+      params:
+        n_estimators: 500
+        max_depth: 8
+        learning_rate: 0.05
+        num_leaves: 63
+        subsample: 0.8
+        colsample_bytree: 0.8
+        min_child_samples: 20
+        reg_alpha: 0.1
+        reg_lambda: 1.0
+        random_state: 42
+        n_jobs: -1
+        verbosity: -1
+    
+    - name: "catboost"
+      params:
+        iterations: 500
+        depth: 8
+        learning_rate: 0.05
+        l2_leaf_reg: 3
+        random_seed: 42
+        thread_count: -1
+        verbose: false
+    
+    - name: "tabpfn"
+      use: false  # Requires GPU, optional
+  
+  # Cross-encoder models (for re-ranking)
+  cross_encoders:
+    - "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    - "cross-encoder/ms-marco-MiniLM-L-12-v2"
+  
+  # Training
+  training:
+    test_size: 0.2
+    cv_folds: 5
+    stratify: true
+    random_state: 42
+    class_weight: "balanced"
+    
+    # Threshold optimization for F0.5
+    threshold_search:
+      metric: "f0.5"
+      min_threshold: 0.1
+      max_threshold: 0.9
+      steps: 81
+  
+  # Ensemble weights (optimized via validation)
+  ensemble_weights:
+    xgboost: 0.35
+    lightgbm: 0.35
+    catboost: 0.20
+    cross_encoder: 0.10
+
+# Inference configuration
+inference:
+  batch_size: 1024
+  use_mixed_precision: true
+  num_workers: 4
+
+# Output configuration
+output:
+  candidate_pairs: "candidate_pairs.tsv"
+  matching_results: "matching_results.tsv"
+  submission_dir: "submission"
+
+# Validation
+validation:
+  validate_submission: true
+  check_format: true
+  check_coverage: true
