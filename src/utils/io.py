@@ -34,8 +34,21 @@ def write_tsv(df: pd.DataFrame, filepath: str, **kwargs) -> None:
 
 
 def read_source_file(filepath: str) -> pd.DataFrame:
-    """Read source file (source1, source2, source3) with expected columns."""
+    """Read source file (source1, source2, source3) with expected columns.
+    
+    Handles both canonical column names (id, name, address) and the actual
+    dataset column names (entity_id, business_name, business_address).
+    """
     df = read_tsv(filepath)
+
+    # Remap actual dataset column names to the canonical names used throughout the pipeline
+    rename_map = {
+        'entity_id': 'id',
+        'business_name': 'name',
+        'business_address': 'address',
+    }
+    df = df.rename(columns=rename_map)
+
     expected_cols = ['id', 'name', 'address']
     if not all(col in df.columns for col in expected_cols):
         raise ValueError(f"Source file must have columns: {expected_cols}. Found: {list(df.columns)}")
@@ -43,8 +56,20 @@ def read_source_file(filepath: str) -> pd.DataFrame:
 
 
 def read_ground_truth(filepath: str) -> pd.DataFrame:
-    """Read ground truth file with source1_id and matched_ids columns."""
+    """Read ground truth file with source1_id and matched_ids columns.
+
+    Handles both canonical column names (source1_id, matched_ids) and the actual
+    dataset column names (source1_entity_id, matched_entity_ids).
+    """
     df = read_tsv(filepath)
+
+    # Remap actual dataset column names to the canonical names used throughout the pipeline
+    rename_map = {
+        'source1_entity_id': 'source1_id',
+        'matched_entity_ids': 'matched_ids',
+    }
+    df = df.rename(columns=rename_map)
+
     expected_cols = ['source1_id', 'matched_ids']
     if not all(col in df.columns for col in expected_cols):
         raise ValueError(f"Ground truth must have columns: {expected_cols}. Found: {list(df.columns)}")
@@ -80,23 +105,38 @@ def write_matching_results(results: Dict[str, List[str]], filepath: str) -> None
 
 
 def load_all_sources(data_dir: str, split: str = 'train') -> Dict[str, pd.DataFrame]:
-    """Load all source files for a given split."""
+    """Load all source files for a given split.
+
+    Tries two filename conventions:
+      1. Canonical (old): ``source{i}_{split}.tsv``  e.g. ``source1_train.tsv``
+      2. Actual dataset:  ``{split}_source{i}.tsv``  e.g. ``train_source1.tsv``
+    """
     sources = {}
     for i in [1, 2, 3]:
-        filename = f"source{i}_{split}.tsv"
-        filepath = Path(data_dir) / filename
-        if filepath.exists():
+        # Try both naming conventions
+        candidates = [
+            Path(data_dir) / f"source{i}_{split}.tsv",
+            Path(data_dir) / f"{split}_source{i}.tsv",
+        ]
+        filepath = next((p for p in candidates if p.exists()), None)
+        if filepath:
             sources[f'source{i}'] = read_source_file(str(filepath))
-            logger.info(f"Loaded {len(sources[f'source{i}'])} records from {filename}")
+            logger.info(f"Loaded {len(sources[f'source{i}'])} records from {filepath.name}")
         else:
-            logger.warning(f"File not found: {filepath}")
-    
+            logger.warning(f"File not found for source{i}/{split}. Tried: {[str(p) for p in candidates]}")
+
     if split == 'train':
-        gt_path = Path(data_dir) / "ground_truth_train.tsv"
-        if gt_path.exists():
+        gt_candidates = [
+            Path(data_dir) / "ground_truth_train.tsv",
+            Path(data_dir) / "train_ground_truth.tsv",
+        ]
+        gt_path = next((p for p in gt_candidates if p.exists()), None)
+        if gt_path:
             sources['ground_truth'] = read_ground_truth(str(gt_path))
-            logger.info(f"Loaded {len(sources['ground_truth'])} ground truth entries")
-    
+            logger.info(f"Loaded {len(sources['ground_truth'])} ground truth entries from {gt_path.name}")
+        else:
+            logger.warning(f"Ground truth not found. Tried: {[str(p) for p in gt_candidates]}")
+
     return sources
 
 
